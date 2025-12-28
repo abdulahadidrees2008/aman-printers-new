@@ -1,5 +1,24 @@
 <!DOCTYPE html>
 <html lang="en">
+<script type="module">
+  // Import the functions you need from the SDKs you need
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/12.7.0/firebase-app.js";
+  // TODO: Add SDKs for Firebase products that you want to use
+  // https://firebase.google.com/docs/web/setup#available-libraries
+
+  // Your web app's Firebase configuration
+  const firebaseConfig = {
+    apiKey: "AIzaSyBESxndRfEz5gpeO1d1zmke7htIhF1HTuk",
+    authDomain: "aman-printers-new.firebaseapp.com",
+    projectId: "aman-printers-new",
+    storageBucket: "aman-printers-new.firebasestorage.app",
+    messagingSenderId: "890872736748",
+    appId: "1:890872736748:web:605431112390be7b3beec9"
+  };
+
+  // Initialize Firebase
+  const app = initializeApp(firebaseConfig);
+</script>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -180,47 +199,75 @@ function saveLedger(){
       balance:r.cells[8].innerText
     });
   });
-  localStorage.setItem("ledger_"+party, JSON.stringify({party,rows}));
-  alert("Ledger for '"+party+"' saved!");
-  updateSavedPartiesDropdown();
-}
+ async function saveLedger(){
+  const party = document.getElementById("partyName").value.trim();
+  if(!party) return alert("Enter party name!");
 
-function updateSavedPartiesDropdown(){
-  const select=document.getElementById("savedParties");
-  select.innerHTML='<option value="">--Select Party--</option>';
-  for(let i=0;i<localStorage.length;i++){
-    const key=localStorage.key(i);
-    if(key.startsWith("ledger_")){
-      const pname=key.replace("ledger_","");
-      const option=document.createElement("option"); option.value=pname; option.innerText=pname; select.appendChild(option);
-    }
-  }
-}
+  const rows = [];
+  document.querySelectorAll("#ledgerTable tbody tr").forEach(r=>{
+    rows.push({
+      date: r.cells[1].innerText,
+      description: r.cells[2].innerHTML,
+      quantity: r.cells[3].innerText,
+      rate: r.cells[4].innerText,
+      debit: r.cells[5].innerText,
+      credit: r.cells[6].innerText,
+      prevBalance: r.cells[7].innerText,
+      balance: r.cells[8].innerText
+    });
+  });
 
-function loadSelectedParty(){
-  const party=document.getElementById("savedParties").value;
+  await db.collection("ledgers").doc(party).set({
+    party: party,
+    rows: rows,
+    updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+  });
+
+  alert("Ledger saved online successfully!");
+}
+async function loadSelectedParty(){
+  const party = document.getElementById("savedParties").value;
   if(!party) return;
-  const data=JSON.parse(localStorage.getItem("ledger_"+party));
-  if(!data) return alert("No ledger found for this party!");
-  document.getElementById("partyName").value=party;
-  const tbody=document.querySelector("#ledgerTable tbody");
-  tbody.innerHTML="";
+
+  const doc = await db.collection("ledgers").doc(party).get();
+  if(!doc.exists) return alert("No data found!");
+
+  const data = doc.data();
+  document.getElementById("partyName").value = party;
+
+  const tbody = document.querySelector("#ledgerTable tbody");
+  tbody.innerHTML = "";
+
   data.rows.forEach((r,i)=>{
     const row=document.createElement("tr");
-    row.innerHTML=`<td>${i+1}</td>
-      <td contenteditable="true" class="date-cell">${r.date}</td>
+    row.innerHTML=`
+      <td>${i+1}</td>
+      <td contenteditable="true">${r.date}</td>
       <td contenteditable="true" class="desc-cell">${r.description}</td>
       <td contenteditable="true" oninput="updateDebit(this)">${r.quantity}</td>
       <td contenteditable="true" oninput="updateDebit(this)">${r.rate}</td>
-      <td class="debit-cell">${r.debit}</td>
+      <td>${r.debit}</td>
       <td contenteditable="true" oninput="updateBalance(this)">${r.credit}</td>
-      <td contenteditable="true" class="prev-balance-cell" oninput="updateBalance(this)">${r.prevBalance}</td>
-      <td class="balance-cell">${r.balance}</td>`;
+      <td contenteditable="true" oninput="updateBalance(this)">${r.prevBalance}</td>
+      <td>${r.balance}</td>`;
     tbody.appendChild(row);
   });
+
   calculateTotals();
-  alert("Ledger for '"+party+"' loaded!");
 }
+async function updateSavedPartiesDropdown(){
+  const select = document.getElementById("savedParties");
+  select.innerHTML='<option value="">--Select Party--</option>';
+
+  const snapshot = await db.collection("ledgers").get();
+  snapshot.forEach(doc=>{
+    const opt=document.createElement("option");
+    opt.value=doc.id;
+    opt.innerText=doc.id;
+    select.appendChild(opt);
+  });
+}
+
 
 function formatText(cmd){ const sel=window.getSelection(); if(!sel.rangeCount) return; const range=sel.getRangeAt(0); if(!range.startContainer.parentElement.classList.contains('desc-cell')) return; document.execCommand(cmd,false,null);}
 function changeColor(color){ const sel=window.getSelection(); if(!sel.rangeCount)return; const range=sel.getRangeAt(0); if(!range.startContainer.parentElement.classList.contains('desc-cell')) return; document.execCommand("foreColor",false,color);}
