@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Aman Printers Ledger</title>
+<style>
+  body { font-family: Arial, sans-serif; margin: 30px; background: #f5f5f5; }
+  .header { background: #1a1a1a; color: white; text-align: center; padding: 15px; font-size: 28px; font-weight: bold; letter-spacing: 2px; }
+  .contact { margin-top: 5px; text-align: center; font-size: 16px; color: #333; }
+  .container { background: white; padding: 25px; border-radius: 10px; box-shadow: 0 0 10px rgba(0,0,0,0.1); margin-top: 20px; }
+  label { font-weight: bold; font-size: 18px; }
+  input, select { width: 400px; padding: 5px; font-size: 16px; margin-left: 10px; border: 1px solid #ccc; border-radius: 4px; }
+  table { width: 100%; border-collapse: collapse; margin-top: 15px; }
+  th, td { border: 1px solid #000; text-align: center; padding: 6px; }
+  th { background: #f0f0f0; }
+  tfoot td { font-weight: bold; }
+  .btns { margin-top: 20px; text-align: right; }
+  button { background: #1a1a1a; color: white; padding: 10px 20px; border: none; border-radius: 6px; margin-left: 10px; cursor: pointer; font-size: 15px; }
+  button:hover { background: #333; }
+  .toolbar { margin-top: 10px; margin-bottom: 10px; background: #eee; padding: 8px; border-radius: 6px; border: 1px solid #ccc; }
+  .toolbar button { background: #555; color: white; border: none; padding: 5px 10px; margin-right: 5px; border-radius: 4px; cursor: pointer; }
+  .toolbar button:hover { background: #333; }
+  .toolbar input[type="color"] { vertical-align: middle; margin-left: 5px; }
+  .desc-cell:focus, .prev-balance-cell:focus { background-color: #fff8b3; outline: 2px solid #ffeb3b; }
+</style>
+</head>
+<body>
+
+<div class="header">AMAN PRINTERS</div>
+<div class="contact">
+  Phone: 03008666450 | Email: amanprinters92@gmail.com<br>
+  Address: Office #4, 2nd Floor, Sabir Plaza, Press Market, Aminpur Bazar, Faisalabad
+</div>
+
+<div class="container" id="content">
+
+  <div class="toolbar">
+    <button onclick="formatText('bold')"><b>B</b></button>
+    <button onclick="formatText('italic')"><i>I</i></button>
+    <label>Color:</label>
+    <input type="color" id="colorPicker" onchange="changeColor(this.value)">
+  </div>
+
+  <div>
+    <label>Party Name:</label>
+    <input type="text" id="partyName" placeholder="Enter party name">
+  </div>
+  <div style="margin-top:10px;">
+    <label>Select Saved Party:</label>
+    <select id="savedParties" onchange="loadSelectedParty()">
+      <option value="">--Select Party--</option>
+    </select>
+  </div>
+
+  <table id="ledgerTable">
+    <thead>
+      <tr>
+        <th>Sr.#</th>
+        <th>Date</th>
+        <th>Description</th>
+        <th>Quantity</th>
+        <th>Rate</th>
+        <th>Debit Amount</th>
+        <th>Credit Amount</th>
+        <th>Previous Balance</th>
+        <th>Balance</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>1</td>
+        <td contenteditable="true" class="date-cell"></td>
+        <td contenteditable="true" class="desc-cell"></td>
+        <td contenteditable="true" oninput="updateDebit(this)"></td>
+        <td contenteditable="true" oninput="updateDebit(this)"></td>
+        <td class="debit-cell"></td>
+        <td contenteditable="true" oninput="updateBalance(this)"></td>
+        <td contenteditable="true" class="prev-balance-cell" oninput="updateBalance(this)">0.00</td>
+        <td class="balance-cell"></td>
+      </tr>
+    </tbody>
+    <tfoot>
+      <tr>
+        <td colspan="5" style="text-align:right;">Total:</td>
+        <td id="totalDebit">0</td>
+        <td id="totalCredit">0</td>
+        <td id="totalPrevBalance">0</td>
+        <td id="totalBalance">0</td>
+      </tr>
+    </tfoot>
+  </table>
+
+  <div class="btns">
+    <button onclick="addRow()">+ Add Row</button>
+    <button onclick="calculateTotals()">Calculate</button>
+    <button onclick="window.print()">🖨️ Print</button>
+    <button onclick="downloadPDF()">💾 Save as PDF</button>
+    <button onclick="saveLedger()">💾 Save</button>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.9.3/html2pdf.bundle.min.js"></script>
+<script>
+function safeParse(v){const n=parseFloat(v);return isNaN(n)?0:n;}
+function getTodayDate(){const t=new Date(); return `${String(t.getDate()).padStart(2,'0')}-${String(t.getMonth()+1).padStart(2,'0')}-${t.getFullYear()}`;}
+
+document.addEventListener('DOMContentLoaded',()=>{
+  document.querySelectorAll('.date-cell').forEach(c=>{if(!c.textContent.trim())c.textContent=getTodayDate();});
+  updateSavedPartiesDropdown();
+});
+
+function addRow(){
+  const table=document.querySelector("#ledgerTable tbody");
+  const count=table.rows.length+1;
+  const row=document.createElement("tr");
+  row.innerHTML=`<td>${count}</td>
+    <td contenteditable="true" class="date-cell">${getTodayDate()}</td>
+    <td contenteditable="true" class="desc-cell"></td>
+    <td contenteditable="true" oninput="updateDebit(this)"></td>
+    <td contenteditable="true" oninput="updateDebit(this)"></td>
+    <td class="debit-cell"></td>
+    <td contenteditable="true" oninput="updateBalance(this)"></td>
+    <td contenteditable="true" class="prev-balance-cell" oninput="updateBalance(this)">0.00</td>
+    <td class="balance-cell"></td>`;
+  table.appendChild(row);
+}
+
+function updateDebit(cell){
+  const row=cell.parentElement;
+  const debit=safeParse(row.cells[3].innerText)*safeParse(row.cells[4].innerText);
+  row.cells[5].innerText=debit.toFixed(2);
+  updateBalance(row.cells[6]);
+}
+
+function updateBalance(cell){
+  const row=cell.parentElement;
+  const debit=safeParse(row.cells[5].innerText);
+  const credit=safeParse(row.cells[6].innerText);
+  const prev=safeParse(row.cells[7].innerText);
+  row.cells[8].innerText=(prev+debit-credit).toFixed(2);
+  calculateTotals();
+}
+
+function calculateTotals(){
+  let totalDebit=0,totalCredit=0,totalPrev=0;
+  document.querySelectorAll("#ledgerTable tbody tr").forEach(r=>{
+    totalDebit+=safeParse(r.cells[5].innerText);
+    totalCredit+=safeParse(r.cells[6].innerText);
+    totalPrev+=safeParse(r.cells[7].innerText);
+  });
+  document.getElementById("totalDebit").innerText=totalDebit.toFixed(2);
+  document.getElementById("totalCredit").innerText=totalCredit.toFixed(2);
+  document.getElementById("totalPrevBalance").innerText=totalPrev.toFixed(2);
+  document.getElementById("totalBalance").innerText=(totalPrev+totalDebit-totalCredit).toFixed(2);
+}
+
+function downloadPDF(){
+  const tempDiv=document.createElement("div");
+  const header=document.createElement("h1"); header.innerText="AMAN PRINTERS"; header.style.textAlign="center"; tempDiv.appendChild(header);
+  const party=document.getElementById("partyName").value||"Party Name";
+  const pHeader=document.createElement("h2"); pHeader.innerText="Party Name: "+party; pHeader.style.textAlign="center"; tempDiv.appendChild(pHeader);
+  tempDiv.appendChild(document.querySelector("#ledgerTable").cloneNode(true));
+  html2pdf().set({margin:0.5, filename:party+"_Ledger.pdf", image:{type:'jpeg',quality:0.98}, html2canvas:{scale:2}, jsPDF:{unit:'in',format:'a4',orientation:'landscape'}}).from(tempDiv).save();
+}
+
+function saveLedger(){
+  const party=document.getElementById("partyName").value.trim();
+  if(!party) return alert("Enter party name!");
+  const rows=[];
+  document.querySelectorAll("#ledgerTable tbody tr").forEach(r=>{
+    rows.push({
+      date:r.cells[1].innerText,
+      description:r.cells[2].innerHTML,
+      quantity:r.cells[3].innerText,
+      rate:r.cells[4].innerText,
+      debit:r.cells[5].innerText,
+      credit:r.cells[6].innerText,
+      prevBalance:r.cells[7].innerText,
+      balance:r.cells[8].innerText
+    });
+  });
+  localStorage.setItem("ledger_"+party, JSON.stringify({party,rows}));
+  alert("Ledger for '"+party+"' saved!");
+  updateSavedPartiesDropdown();
+}
+
+function updateSavedPartiesDropdown(){
+  const select=document.getElementById("savedParties");
+  select.innerHTML='<option value="">--Select Party--</option>';
+  for(let i=0;i<localStorage.length;i++){
+    const key=localStorage.key(i);
+    if(key.startsWith("ledger_")){
+      const pname=key.replace("ledger_","");
+      const option=document.createElement("option"); option.value=pname; option.innerText=pname; select.appendChild(option);
+    }
+  }
+}
+
+function loadSelectedParty(){
+  const party=document.getElementById("savedParties").value;
+  if(!party) return;
+  const data=JSON.parse(localStorage.getItem("ledger_"+party));
+  if(!data) return alert("No ledger found for this party!");
+  document.getElementById("partyName").value=party;
+  const tbody=document.querySelector("#ledgerTable tbody");
+  tbody.innerHTML="";
+  data.rows.forEach((r,i)=>{
+    const row=document.createElement("tr");
+    row.innerHTML=`<td>${i+1}</td>
+      <td contenteditable="true" class="date-cell">${r.date}</td>
+      <td contenteditable="true" class="desc-cell">${r.description}</td>
+      <td contenteditable="true" oninput="updateDebit(this)">${r.quantity}</td>
+      <td contenteditable="true" oninput="updateDebit(this)">${r.rate}</td>
+      <td class="debit-cell">${r.debit}</td>
+      <td contenteditable="true" oninput="updateBalance(this)">${r.credit}</td>
+      <td contenteditable="true" class="prev-balance-cell" oninput="updateBalance(this)">${r.prevBalance}</td>
+      <td class="balance-cell">${r.balance}</td>`;
+    tbody.appendChild(row);
+  });
+  calculateTotals();
+  alert("Ledger for '"+party+"' loaded!");
+}
+
+function formatText(cmd){ const sel=window.getSelection(); if(!sel.rangeCount) return; const range=sel.getRangeAt(0); if(!range.startContainer.parentElement.classList.contains('desc-cell')) return; document.execCommand(cmd,false,null);}
+function changeColor(color){ const sel=window.getSelection(); if(!sel.rangeCount)return; const range=sel.getRangeAt(0); if(!range.startContainer.parentElement.classList.contains('desc-cell')) return; document.execCommand("foreColor",false,color);}
+</script>
+</body>
+</html>
