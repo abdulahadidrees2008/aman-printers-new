@@ -1,28 +1,11 @@
 <!DOCTYPE html>
 <html lang="en">
-<script type="module">
-  // Import the functions you need from the SDKs you need
-  import { initializeApp } from "https://www.gstatic.com/firebasejs/12.7.0/firebase-app.js";
-  // TODO: Add SDKs for Firebase products that you want to use
-  // https://firebase.google.com/docs/web/setup#available-libraries
-
-  // Your web app's Firebase configuration
-  const firebaseConfig = {
-    apiKey: "AIzaSyBESxndRfEz5gpeO1d1zmke7htIhF1HTuk",
-    authDomain: "aman-printers-new.firebaseapp.com",
-    projectId: "aman-printers-new",
-    storageBucket: "aman-printers-new.firebasestorage.app",
-    messagingSenderId: "890872736748",
-    appId: "1:890872736748:web:605431112390be7b3beec9"
-  };
-
-  // Initialize Firebase
-  const app = initializeApp(firebaseConfig);
-</script>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Aman Printers Ledger</title>
+
+<!-- CSS Styles -->
 <style>
   body { font-family: Arial, sans-serif; margin: 30px; background: #f5f5f5; }
   .header { background: #1a1a1a; color: white; text-align: center; padding: 15px; font-size: 28px; font-weight: bold; letter-spacing: 2px; }
@@ -43,6 +26,201 @@
   .toolbar input[type="color"] { vertical-align: middle; margin-left: 5px; }
   .desc-cell:focus, .prev-balance-cell:focus { background-color: #fff8b3; outline: 2px solid #ffeb3b; }
 </style>
+
+<!-- html2pdf -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.9.3/html2pdf.bundle.min.js"></script>
+
+<!-- Firebase v12 modular SDK -->
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/12.7.0/firebase-app.js";
+import { getFirestore, doc, setDoc, getDoc, collection, getDocs, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.7.0/firebase-firestore.js";
+
+// Firebase config
+const firebaseConfig = {
+  apiKey: "AIzaSyBESxndRfEz5gpeO1d1zmke7htIhF1HTuk",
+  authDomain: "aman-printers-new.firebaseapp.com",
+  projectId: "aman-printers-new",
+  storageBucket: "aman-printers-new.firebasestorage.app",
+  messagingSenderId: "890872736748",
+  appId: "1:890872736748:web:605431112390be7b3beec9"
+};
+
+// Initialize Firebase
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+
+// Helper functions
+function safeParse(v){ const n = parseFloat(v); return isNaN(n)?0:n; }
+function getTodayDate(){ const t = new Date(); return `${String(t.getDate()).padStart(2,'0')}-${String(t.getMonth()+1).padStart(2,'0')}-${t.getFullYear()}`; }
+
+document.addEventListener('DOMContentLoaded', () => {
+  document.querySelectorAll('.date-cell').forEach(c => { if(!c.textContent.trim()) c.textContent = getTodayDate(); });
+  updateSavedPartiesDropdown();
+});
+
+// Ledger Table Functions
+window.addRow = () => {
+  const table = document.querySelector("#ledgerTable tbody");
+  const count = table.rows.length + 1;
+  const row = document.createElement("tr");
+  row.innerHTML = `
+    <td>${count}</td>
+    <td contenteditable="true" class="date-cell">${getTodayDate()}</td>
+    <td contenteditable="true" class="desc-cell"></td>
+    <td contenteditable="true" oninput="updateDebit(this)"></td>
+    <td contenteditable="true" oninput="updateDebit(this)"></td>
+    <td class="debit-cell"></td>
+    <td contenteditable="true" oninput="updateBalance(this)"></td>
+    <td contenteditable="true" class="prev-balance-cell" oninput="updateBalance(this)">0.00</td>
+    <td class="balance-cell"></td>
+  `;
+  table.appendChild(row);
+};
+
+window.updateDebit = (cell) => {
+  const row = cell.parentElement;
+  const debit = safeParse(row.cells[3].innerText) * safeParse(row.cells[4].innerText);
+  row.cells[5].innerText = debit.toFixed(2);
+  updateBalance(row.cells[6]);
+};
+
+window.updateBalance = (cell) => {
+  const row = cell.parentElement;
+  const debit = safeParse(row.cells[5].innerText);
+  const credit = safeParse(row.cells[6].innerText);
+  const prev = safeParse(row.cells[7].innerText);
+  row.cells[8].innerText = (prev + debit - credit).toFixed(2);
+  calculateTotals();
+};
+
+window.calculateTotals = () => {
+  let totalDebit = 0, totalCredit = 0, totalPrev = 0;
+  document.querySelectorAll("#ledgerTable tbody tr").forEach(r => {
+    totalDebit += safeParse(r.cells[5].innerText);
+    totalCredit += safeParse(r.cells[6].innerText);
+    totalPrev += safeParse(r.cells[7].innerText);
+  });
+  document.getElementById("totalDebit").innerText = totalDebit.toFixed(2);
+  document.getElementById("totalCredit").innerText = totalCredit.toFixed(2);
+  document.getElementById("totalPrevBalance").innerText = totalPrev.toFixed(2);
+  document.getElementById("totalBalance").innerText = (totalPrev + totalDebit - totalCredit).toFixed(2);
+};
+
+// PDF Download
+window.downloadPDF = () => {
+  const tempDiv = document.createElement("div");
+  const header = document.createElement("h1");
+  header.innerText = "AMAN PRINTERS";
+  header.style.textAlign = "center";
+  tempDiv.appendChild(header);
+  const party = document.getElementById("partyName").value || "Party Name";
+  const pHeader = document.createElement("h2");
+  pHeader.innerText = "Party Name: " + party;
+  pHeader.style.textAlign = "center";
+  tempDiv.appendChild(pHeader);
+  tempDiv.appendChild(document.querySelector("#ledgerTable").cloneNode(true));
+  html2pdf().set({
+    margin: 0.5,
+    filename: party + "_Ledger.pdf",
+    image: { type: 'jpeg', quality: 0.98 },
+    html2canvas: { scale: 2 },
+    jsPDF: { unit: 'in', format: 'a4', orientation: 'landscape' }
+  }).from(tempDiv).save();
+};
+
+// Save Ledger to Firebase
+window.saveLedger = async () => {
+  const party = document.getElementById("partyName").value.trim();
+  if (!party) return alert("Enter party name!");
+
+  const rows = [];
+  document.querySelectorAll("#ledgerTable tbody tr").forEach(r => {
+    rows.push({
+      date: r.cells[1].innerText,
+      description: r.cells[2].innerHTML,
+      quantity: r.cells[3].innerText,
+      rate: r.cells[4].innerText,
+      debit: r.cells[5].innerText,
+      credit: r.cells[6].innerText,
+      prevBalance: r.cells[7].innerText,
+      balance: r.cells[8].innerText
+    });
+  });
+
+  await setDoc(doc(db, "ledgers", party), {
+    party: party,
+    rows: rows,
+    updatedAt: serverTimestamp()
+  });
+
+  alert("Ledger saved online successfully!");
+  updateSavedPartiesDropdown();
+};
+
+// Load Ledger from Firebase
+window.loadSelectedParty = async () => {
+  const party = document.getElementById("savedParties").value;
+  if (!party) return;
+
+  const docRef = doc(db, "ledgers", party);
+  const docSnap = await getDoc(docRef);
+  if (!docSnap.exists()) return alert("No data found!");
+
+  const data = docSnap.data();
+  document.getElementById("partyName").value = party;
+
+  const tbody = document.querySelector("#ledgerTable tbody");
+  tbody.innerHTML = "";
+
+  data.rows.forEach((r, i) => {
+    const row = document.createElement("tr");
+    row.innerHTML = `
+      <td>${i+1}</td>
+      <td contenteditable="true">${r.date}</td>
+      <td contenteditable="true" class="desc-cell">${r.description}</td>
+      <td contenteditable="true" oninput="updateDebit(this)">${r.quantity}</td>
+      <td contenteditable="true" oninput="updateDebit(this)">${r.rate}</td>
+      <td>${r.debit}</td>
+      <td contenteditable="true" oninput="updateBalance(this)">${r.credit}</td>
+      <td contenteditable="true" oninput="updateBalance(this)">${r.prevBalance}</td>
+      <td>${r.balance}</td>
+    `;
+    tbody.appendChild(row);
+  });
+
+  calculateTotals();
+};
+
+// Update Saved Parties Dropdown
+window.updateSavedPartiesDropdown = async () => {
+  const select = document.getElementById("savedParties");
+  select.innerHTML = '<option value="">--Select Party--</option>';
+
+  const querySnapshot = await getDocs(collection(db, "ledgers"));
+  querySnapshot.forEach(doc => {
+    const opt = document.createElement("option");
+    opt.value = doc.id;
+    opt.innerText = doc.id;
+    select.appendChild(opt);
+  });
+};
+
+// Text Formatting
+window.formatText = (cmd) => {
+  const sel = window.getSelection();
+  if (!sel.rangeCount) return;
+  const range = sel.getRangeAt(0);
+  if (!range.startContainer.parentElement.classList.contains('desc-cell')) return;
+  document.execCommand(cmd, false, null);
+};
+window.changeColor = (color) => {
+  const sel = window.getSelection();
+  if (!sel.rangeCount) return;
+  const range = sel.getRangeAt(0);
+  if (!range.startContainer.parentElement.classList.contains('desc-cell')) return;
+  document.execCommand("foreColor", false, color);
+};
+</script>
 </head>
 <body>
 
@@ -119,158 +297,5 @@
   </div>
 </div>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.9.3/html2pdf.bundle.min.js"></script>
-<script>
-function safeParse(v){const n=parseFloat(v);return isNaN(n)?0:n;}
-function getTodayDate(){const t=new Date(); return `${String(t.getDate()).padStart(2,'0')}-${String(t.getMonth()+1).padStart(2,'0')}-${t.getFullYear()}`;}
-
-document.addEventListener('DOMContentLoaded',()=>{
-  document.querySelectorAll('.date-cell').forEach(c=>{if(!c.textContent.trim())c.textContent=getTodayDate();});
-  updateSavedPartiesDropdown();
-});
-
-function addRow(){
-  const table=document.querySelector("#ledgerTable tbody");
-  const count=table.rows.length+1;
-  const row=document.createElement("tr");
-  row.innerHTML=`<td>${count}</td>
-    <td contenteditable="true" class="date-cell">${getTodayDate()}</td>
-    <td contenteditable="true" class="desc-cell"></td>
-    <td contenteditable="true" oninput="updateDebit(this)"></td>
-    <td contenteditable="true" oninput="updateDebit(this)"></td>
-    <td class="debit-cell"></td>
-    <td contenteditable="true" oninput="updateBalance(this)"></td>
-    <td contenteditable="true" class="prev-balance-cell" oninput="updateBalance(this)">0.00</td>
-    <td class="balance-cell"></td>`;
-  table.appendChild(row);
-}
-
-function updateDebit(cell){
-  const row=cell.parentElement;
-  const debit=safeParse(row.cells[3].innerText)*safeParse(row.cells[4].innerText);
-  row.cells[5].innerText=debit.toFixed(2);
-  updateBalance(row.cells[6]);
-}
-
-function updateBalance(cell){
-  const row=cell.parentElement;
-  const debit=safeParse(row.cells[5].innerText);
-  const credit=safeParse(row.cells[6].innerText);
-  const prev=safeParse(row.cells[7].innerText);
-  row.cells[8].innerText=(prev+debit-credit).toFixed(2);
-  calculateTotals();
-}
-
-function calculateTotals(){
-  let totalDebit=0,totalCredit=0,totalPrev=0;
-  document.querySelectorAll("#ledgerTable tbody tr").forEach(r=>{
-    totalDebit+=safeParse(r.cells[5].innerText);
-    totalCredit+=safeParse(r.cells[6].innerText);
-    totalPrev+=safeParse(r.cells[7].innerText);
-  });
-  document.getElementById("totalDebit").innerText=totalDebit.toFixed(2);
-  document.getElementById("totalCredit").innerText=totalCredit.toFixed(2);
-  document.getElementById("totalPrevBalance").innerText=totalPrev.toFixed(2);
-  document.getElementById("totalBalance").innerText=(totalPrev+totalDebit-totalCredit).toFixed(2);
-}
-
-function downloadPDF(){
-  const tempDiv=document.createElement("div");
-  const header=document.createElement("h1"); header.innerText="AMAN PRINTERS"; header.style.textAlign="center"; tempDiv.appendChild(header);
-  const party=document.getElementById("partyName").value||"Party Name";
-  const pHeader=document.createElement("h2"); pHeader.innerText="Party Name: "+party; pHeader.style.textAlign="center"; tempDiv.appendChild(pHeader);
-  tempDiv.appendChild(document.querySelector("#ledgerTable").cloneNode(true));
-  html2pdf().set({margin:0.5, filename:party+"_Ledger.pdf", image:{type:'jpeg',quality:0.98}, html2canvas:{scale:2}, jsPDF:{unit:'in',format:'a4',orientation:'landscape'}}).from(tempDiv).save();
-}
-
-function saveLedger(){
-  const party=document.getElementById("partyName").value.trim();
-  if(!party) return alert("Enter party name!");
-  const rows=[];
-  document.querySelectorAll("#ledgerTable tbody tr").forEach(r=>{
-    rows.push({
-      date:r.cells[1].innerText,
-      description:r.cells[2].innerHTML,
-      quantity:r.cells[3].innerText,
-      rate:r.cells[4].innerText,
-      debit:r.cells[5].innerText,
-      credit:r.cells[6].innerText,
-      prevBalance:r.cells[7].innerText,
-      balance:r.cells[8].innerText
-    });
-  });
- async function saveLedger(){
-  const party = document.getElementById("partyName").value.trim();
-  if(!party) return alert("Enter party name!");
-
-  const rows = [];
-  document.querySelectorAll("#ledgerTable tbody tr").forEach(r=>{
-    rows.push({
-      date: r.cells[1].innerText,
-      description: r.cells[2].innerHTML,
-      quantity: r.cells[3].innerText,
-      rate: r.cells[4].innerText,
-      debit: r.cells[5].innerText,
-      credit: r.cells[6].innerText,
-      prevBalance: r.cells[7].innerText,
-      balance: r.cells[8].innerText
-    });
-  });
-
-  await db.collection("ledgers").doc(party).set({
-    party: party,
-    rows: rows,
-    updatedAt: firebase.firestore.FieldValue.serverTimestamp()
-  });
-
-  alert("Ledger saved online successfully!");
-}
-async function loadSelectedParty(){
-  const party = document.getElementById("savedParties").value;
-  if(!party) return;
-
-  const doc = await db.collection("ledgers").doc(party).get();
-  if(!doc.exists) return alert("No data found!");
-
-  const data = doc.data();
-  document.getElementById("partyName").value = party;
-
-  const tbody = document.querySelector("#ledgerTable tbody");
-  tbody.innerHTML = "";
-
-  data.rows.forEach((r,i)=>{
-    const row=document.createElement("tr");
-    row.innerHTML=`
-      <td>${i+1}</td>
-      <td contenteditable="true">${r.date}</td>
-      <td contenteditable="true" class="desc-cell">${r.description}</td>
-      <td contenteditable="true" oninput="updateDebit(this)">${r.quantity}</td>
-      <td contenteditable="true" oninput="updateDebit(this)">${r.rate}</td>
-      <td>${r.debit}</td>
-      <td contenteditable="true" oninput="updateBalance(this)">${r.credit}</td>
-      <td contenteditable="true" oninput="updateBalance(this)">${r.prevBalance}</td>
-      <td>${r.balance}</td>`;
-    tbody.appendChild(row);
-  });
-
-  calculateTotals();
-}
-async function updateSavedPartiesDropdown(){
-  const select = document.getElementById("savedParties");
-  select.innerHTML='<option value="">--Select Party--</option>';
-
-  const snapshot = await db.collection("ledgers").get();
-  snapshot.forEach(doc=>{
-    const opt=document.createElement("option");
-    opt.value=doc.id;
-    opt.innerText=doc.id;
-    select.appendChild(opt);
-  });
-}
-
-
-function formatText(cmd){ const sel=window.getSelection(); if(!sel.rangeCount) return; const range=sel.getRangeAt(0); if(!range.startContainer.parentElement.classList.contains('desc-cell')) return; document.execCommand(cmd,false,null);}
-function changeColor(color){ const sel=window.getSelection(); if(!sel.rangeCount)return; const range=sel.getRangeAt(0); if(!range.startContainer.parentElement.classList.contains('desc-cell')) return; document.execCommand("foreColor",false,color);}
-</script>
 </body>
 </html>
